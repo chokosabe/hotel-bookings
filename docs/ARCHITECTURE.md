@@ -34,7 +34,7 @@ Gin handlers ──► application services ──► database/sql ──► SQL
 - `internal/hotels`: finds named hotels and calculates suitable availability.
 - `internal/bookings`: validates requests, selects/locks a room through the database transaction, creates booking-night rows, and looks up references.
 - `internal/notifications`: abstracts asynchronous confirmation delivery.
-- `internal/testdata`: creates and removes deterministic evaluator data.
+- `internal/evaluatordata`: creates and removes deterministic evaluator data.
 
 ## Data and concurrency model
 

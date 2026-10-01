@@ -3,3 +3,17 @@
 ### Health check
 GET {{baseUrl}}/healthz
 Accept: application/json
+
+### Reset the deterministic evaluator data
+POST {{baseUrl}}/api/v1/test/reset
+
+### Seed The Grand Hotel and its six rooms (safe to repeat)
+POST {{baseUrl}}/api/v1/test/seed
+
+### Find the seeded hotel by case-insensitive name substring
+GET {{baseUrl}}/api/v1/hotels?name=grand
+Accept: application/json
+
+### A successful search with no matches is an empty list
+GET {{baseUrl}}/api/v1/hotels?name=unknown
+Accept: application/json

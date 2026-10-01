@@ -2,7 +2,7 @@
 
 A Go/Gin REST API for the hotel-booking coding exercise. It is intentionally small, but is designed around the non-negotiable booking rules: a party receives one suitable room for its entire stay and a room cannot be double-booked for a night.
 
-> **Status:** the foundation slice is runnable. Hotel search, availability, booking, retrieval, and seed/reset endpoints will be added as separately committed slices.
+> **Status:** the foundation, deterministic test-data, and hotel-search slices are complete. Availability, booking, and booking retrieval will be added as separately committed slices.
 
 ## Quick start
 
@@ -42,6 +42,17 @@ Copy `.env.example` if you want a record of local values; the API reads environm
 | `ENABLE_TEST_ENDPOINTS` | `true` | Enables unauthenticated evaluator seed/reset endpoints; set to `false` in deployments |
 
 The service has no authentication because the challenge does not require it. Never expose enabled seed/reset endpoints on an untrusted public deployment.
+
+## Current endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/healthz` | Process health check |
+| `POST` | `/api/v1/test/reset` | Remove all seeded test data |
+| `POST` | `/api/v1/test/seed` | Idempotently create The Grand Hotel and six rooms |
+| `GET` | `/api/v1/hotels?name=grand` | Find hotels by case-insensitive name substring |
+
+The test endpoints return `404` when `ENABLE_TEST_ENDPOINTS=false`.
 
 ## Documentation
 

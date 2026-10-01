@@ -36,7 +36,7 @@
 - `internal/bookings/service.go` — atomic booking creation and reference lookup.
 - `internal/notifications/notifier.go` — lifecycle-aware asynchronous confirmation abstraction.
 - `internal/httpapi/*.go` — Gin routes, request decoding, response DTOs, shared error translation.
-- `internal/testdata/service.go` — deterministic reset/seed application service.
+- `internal/evaluatordata/service.go` — deterministic reset/seed application service.
 - `internal/*/*_test.go` — focused service and real-SQLite HTTP integration tests.
 - `docs/PRD.md` and `docs/ARCHITECTURE.md` — decision records plus clearly marked author-completion sections.
 - `docs/openapi.yaml` and `requests.http` — API contract and executable manual requests.
@@ -161,13 +161,13 @@ Expected: a clean working tree and the foundation commit on GitHub branch `initi
 ### Task 2: Deterministic Test Data and Hotel Search
 
 **Files:**
-- Create: `internal/domain/hotel.go`, `internal/hotels/service.go`, `internal/testdata/service.go`
+- Create: `internal/domain/hotel.go`, `internal/hotels/service.go`, `internal/evaluatordata/service.go`
 - Create: `internal/hotels/service_test.go`, `internal/httpapi/hotels_test.go`
 - Modify: `internal/httpapi/server.go`, `cmd/api/main.go`, `docs/openapi.yaml`, `requests.http`, `README.md`
 
 **Interfaces:**
 - Consumes `*sql.DB` migrated in Task 1.
-- Produces `testdata.Service.Reset(ctx)` and `Seed(ctx)`; `hotels.Service.Search(ctx, name string) ([]domain.Hotel, error)`.
+- Produces `evaluatordata.Service.Reset(ctx)` and `Seed(ctx)`; `hotels.Service.Search(ctx, name string) ([]domain.Hotel, error)`.
 - Produces `POST /api/v1/test/reset`, `POST /api/v1/test/seed`, and `GET /api/v1/hotels?name={name}`.
 
 - [ ] **Step 1: Write failing test-data and search tests**
@@ -190,7 +190,7 @@ func TestHotelSearchIsCaseInsensitiveSubstring(t *testing.T) {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `go test ./internal/testdata ./internal/hotels ./internal/httpapi`
+Run: `go test ./internal/evaluatordata ./internal/hotels ./internal/httpapi`
 
 Expected: FAIL because services and routes do not exist.
 

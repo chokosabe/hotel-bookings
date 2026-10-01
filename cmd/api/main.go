@@ -12,6 +12,8 @@ import (
 
 	"github.com/chokosabe/hotel-bookings/internal/config"
 	"github.com/chokosabe/hotel-bookings/internal/database"
+	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
+	"github.com/chokosabe/hotel-bookings/internal/hotels"
 	"github.com/chokosabe/hotel-bookings/internal/httpapi"
 )
 
@@ -34,8 +36,12 @@ func main() {
 	defer db.Close()
 
 	server := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewHandler(),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewHandler(httpapi.Dependencies{
+			Hotels:              hotels.NewService(db),
+			TestData:            evaluatordata.NewService(db),
+			EnableTestEndpoints: cfg.EnableTestEndpoints,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
