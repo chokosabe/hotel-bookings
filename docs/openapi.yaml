@@ -154,7 +154,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /api/v1/test/reset:
     post:
-      summary: Remove all evaluator test data
+      summary: Delete all hotels, rooms, and bookings
       description: Enabled only when ENABLE_TEST_ENDPOINTS is true. Do not expose on untrusted deployments.
       operationId: resetTestData
       responses:
@@ -165,7 +165,7 @@ paths:
   /api/v1/test/seed:
     post:
       summary: Create deterministic evaluator test data
-      description: Enabled only when ENABLE_TEST_ENDPOINTS is true. Idempotently creates The Grand Hotel and its six rooms.
+      description: Enabled only when ENABLE_TEST_ENDPOINTS is true. Idempotently creates The Grand Hotel with ID 1 and its six rooms with IDs 1-6, so the identifiers are stable across reset/seed cycles.
       operationId: seedTestData
       responses:
         '204':
