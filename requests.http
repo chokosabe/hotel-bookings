@@ -51,3 +51,7 @@ Content-Type: application/json
   "lead_guest_name": "Ada Lovelace",
   "lead_guest_email": "ada@example.com"
 }
+
+### Find booking details (replace with the reference returned by create booking)
+GET {{baseUrl}}/api/v1/bookings/HBK-REPLACEWITHREFERENCE
+Accept: application/json

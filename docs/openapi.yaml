@@ -128,6 +128,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/bookings/{reference}:
+    get:
+      summary: Find booking details by public reference
+      operationId: findBooking
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^HBK-[A-Z2-7]{12}$'
+      responses:
+        '200':
+          description: The booking and its assigned room.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          description: No booking has the supplied reference.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/test/reset:
     post:
       summary: Remove all evaluator test data

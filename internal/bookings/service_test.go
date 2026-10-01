@@ -42,6 +42,27 @@ func TestCreateAssignsLowestAdequateRoomReservesEveryNightAndNotifies(t *testing
 	}
 }
 
+func TestFindByReferenceReturnsTheAssignedRoom(t *testing.T) {
+	db := bookingDatabase(t)
+	service := bookings.NewService(db, nil)
+	created, err := service.Create(context.Background(), validInput(t))
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	found, err := service.FindByReference(context.Background(), created.Reference)
+	if err != nil {
+		t.Fatalf("FindByReference() error = %v", err)
+	}
+	if found.Reference != created.Reference || found.Room.Number != "101" || found.LeadGuestEmail != "ada@example.com" {
+		t.Errorf("found booking = %#v, want created booking details", found)
+	}
+	_, err = service.FindByReference(context.Background(), "HBK-NOTFOUND")
+	if !errors.Is(err, bookings.ErrBookingNotFound) {
+		t.Errorf("missing booking error = %v, want ErrBookingNotFound", err)
+	}
+}
+
 func TestCreateRejectsInvalidInputWithoutNotifying(t *testing.T) {
 	db := bookingDatabase(t)
 	notifier := &recordingNotifier{}

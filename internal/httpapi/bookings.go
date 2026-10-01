@@ -70,6 +70,21 @@ func createBooking(service *bookings.Service) gin.HandlerFunc {
 	}
 }
 
+func findBooking(service *bookings.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		booking, err := service.FindByReference(c.Request.Context(), c.Param("reference"))
+		switch {
+		case errors.Is(err, bookings.ErrBookingNotFound):
+			writeError(c, http.StatusNotFound, "booking_not_found", "booking not found")
+			return
+		case err != nil:
+			writeError(c, http.StatusInternalServerError, "internal_error", "unable to find booking")
+			return
+		}
+		c.JSON(http.StatusOK, newBookingResponse(booking))
+	}
+}
+
 func decodeCreateBookingRequest(c *gin.Context) (createBookingRequest, error) {
 	mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {

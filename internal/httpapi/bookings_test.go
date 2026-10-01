@@ -49,6 +49,45 @@ func TestCreateBookingEndpointAssignsRoomAndReturnsReference(t *testing.T) {
 	}
 }
 
+func TestFindBookingEndpointReturnsCreatedBooking(t *testing.T) {
+	handler := newFeatureHandler(t, true)
+	if response := serve(handler, http.MethodPost, "/api/v1/test/seed"); response.Code != http.StatusNoContent {
+		t.Fatalf("seed status = %d, want %d", response.Code, http.StatusNoContent)
+	}
+	created := serveBooking(handler, `{"hotel_id":1,"check_in":"2026-12-10","check_out":"2026-12-12","guest_count":1,"lead_guest_name":"Ada Lovelace","lead_guest_email":"ada@example.com"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", created.Code, http.StatusCreated)
+	}
+	var createBody struct {
+		Reference string `json:"reference"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &createBody); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	found := serve(handler, http.MethodGet, "/api/v1/bookings/"+createBody.Reference)
+	if found.Code != http.StatusOK {
+		t.Fatalf("lookup status = %d, want %d: %s", found.Code, http.StatusOK, found.Body.String())
+	}
+	var foundBody struct {
+		Reference string `json:"reference"`
+		Room      struct {
+			Number string `json:"number"`
+		} `json:"room"`
+	}
+	if err := json.Unmarshal(found.Body.Bytes(), &foundBody); err != nil {
+		t.Fatalf("decode lookup response: %v", err)
+	}
+	if foundBody.Reference != createBody.Reference || foundBody.Room.Number != "101" {
+		t.Errorf("lookup body = %#v, want reference and room 101", foundBody)
+	}
+
+	missing := serve(handler, http.MethodGet, "/api/v1/bookings/HBK-NOTFOUND")
+	if missing.Code != http.StatusNotFound {
+		t.Errorf("missing lookup status = %d, want %d", missing.Code, http.StatusNotFound)
+	}
+}
+
 func TestCreateBookingEndpointRejectsInvalidJSONAndUnavailableRoom(t *testing.T) {
 	handler := newFeatureHandler(t, true)
 	if response := serve(handler, http.MethodPost, "/api/v1/test/seed"); response.Code != http.StatusNoContent {

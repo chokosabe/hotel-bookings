@@ -2,7 +2,7 @@
 
 A Go/Gin REST API for the hotel-booking coding exercise. It is intentionally small, but is designed around the non-negotiable booking rules: a party receives one suitable room for its entire stay and a room cannot be double-booked for a night.
 
-> **Status:** hotel search, availability, and atomic booking creation are complete. Booking retrieval will be added as a separate committed slice.
+> **Status:** all challenge flows are implemented: search, availability, atomic booking creation with simulated confirmation, and reference lookup.
 
 ## Quick start
 
@@ -53,8 +53,20 @@ The service has no authentication because the challenge does not require it. Nev
 | `GET` | `/api/v1/hotels?name=grand` | Find hotels by case-insensitive name substring |
 | `GET` | `/api/v1/hotels/{hotelID}/availability?...` | Find rooms free for every requested night and suitable for the party |
 | `POST` | `/api/v1/bookings` | Atomically assign and reserve one room for a complete stay |
+| `GET` | `/api/v1/bookings/{reference}` | Retrieve a booking and its assigned room |
 
 The test endpoints return `404` when `ENABLE_TEST_ENDPOINTS=false`.
+
+## End-to-end walkthrough
+
+1. Start the API with `make run`.
+2. Run reset and seed from [`requests.http`](requests.http).
+3. Search `GET /api/v1/hotels?name=grand`; use the returned hotel ID.
+4. Check availability with `check_in`, `check_out`, and `guests` query parameters.
+5. Create a booking and retain its `reference` from the `201` response.
+6. Retrieve the same booking from `GET /api/v1/bookings/{reference}`.
+
+A successful creation reserves each night in one transaction, then logs the simulated confirmation after two seconds.
 
 ## Documentation
 

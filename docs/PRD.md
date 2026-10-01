@@ -36,6 +36,15 @@ Provide a small, inspectable REST API for a hotel-booking coding exercise. It le
 5. A booking reference is unique.
 6. Party size never exceeds the selected room capacity.
 
+## Implemented scope checklist
+
+- [x] Hotel name search
+- [x] Date- and party-size-aware individual room availability
+- [x] One-room, non-overlapping booking creation with a unique reference
+- [x] Booking lookup by reference
+- [x] Seed/reset evaluator workflow
+- [x] Asynchronous two-second confirmation simulation
+
 ## Explicit non-goals
 
 Authentication, booking cancellation or modification, pricing, payments, hotel/room administration, pagination, and a rendered Swagger UI are intentionally excluded. The challenge says authentication is unnecessary; the remaining exclusions preserve a complete, focused booking flow rather than incomplete product fragments.

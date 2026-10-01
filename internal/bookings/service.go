@@ -20,6 +20,8 @@ var (
 	ErrInvalidBooking = errors.New("invalid booking")
 	// ErrNoSuitableRoom means no room can accommodate the party for every requested night.
 	ErrNoSuitableRoom = errors.New("no suitable room available")
+	// ErrBookingNotFound means no booking has the requested public reference.
+	ErrBookingNotFound = errors.New("booking not found")
 )
 
 const dateLayout = "2006-01-02"
@@ -178,6 +180,46 @@ func reserveNights(ctx context.Context, tx *sql.Tx, bookingID, roomID int64, sta
 		}
 	}
 	return nil
+}
+
+// FindByReference returns a confirmed booking and its assigned room.
+func (s *Service) FindByReference(ctx context.Context, reference string) (domain.Booking, error) {
+	var booking domain.Booking
+	var checkIn, checkOut, createdAt string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT b.id, b.reference, b.room_id, r.hotel_id, r.number, r.type, r.capacity,
+		       b.check_in, b.check_out, b.guest_count, b.lead_guest_name, b.lead_guest_email, b.created_at
+		FROM bookings b
+		JOIN rooms r ON r.id = b.room_id
+		WHERE b.reference = ?
+	`, strings.TrimSpace(reference)).Scan(
+		&booking.ID, &booking.Reference, &booking.Room.ID, &booking.HotelID, &booking.Room.Number, &booking.Room.Type, &booking.Room.Capacity,
+		&checkIn, &checkOut, &booking.GuestCount, &booking.LeadGuestName, &booking.LeadGuestEmail, &createdAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Booking{}, ErrBookingNotFound
+	}
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("find booking: %w", err)
+	}
+	booking.Room.HotelID = booking.HotelID
+	checkInDate, err := time.Parse(dateLayout, checkIn)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("parse stored check-in: %w", err)
+	}
+	checkOutDate, err := time.Parse(dateLayout, checkOut)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("parse stored check-out: %w", err)
+	}
+	booking.Stay, err = domain.NewStay(checkInDate, checkOutDate)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("validate stored stay: %w", err)
+	}
+	booking.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("parse stored creation time: %w", err)
+	}
+	return booking, nil
 }
 
 func newReference() (string, error) {

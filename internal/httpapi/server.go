@@ -35,6 +35,7 @@ func NewHandler(deps Dependencies) http.Handler {
 	}
 	if deps.Bookings != nil {
 		api.POST("/bookings", createBooking(deps.Bookings))
+		api.GET("/bookings/:reference", findBooking(deps.Bookings))
 	}
 	if deps.EnableTestEndpoints && deps.TestData != nil {
 		test := api.Group("/test")
