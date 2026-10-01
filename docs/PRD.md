@@ -16,27 +16,26 @@ Provide a small, inspectable REST API for a hotel-booking coding exercise. It le
 
 ## Product decisions and rationale
 
-
-| Decision          | Choice                                                                        | Why this is the best fit for this exercise                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Inventory         | One seeded hotel, “The Grand Hotel”; 2 single (1), 2 double (2), 2 deluxe (4) | The brief requires six rooms and three types but not their distribution. We balanced the room composition for demonstration purposes. |
-| Stay dates        | ISO-8601 dates; check-in inclusive, checkout exclusive                        | A new guest can arrive on the prior guest’s checkout date.                                                                            |
-| Room assignment   | The service assigns the lowest adequate capacity, then lowest room number     | Costumers dont need to know internal room IDs; larger parties get larger rooms.                                                       |
-| Availability      | Individual qualifying rooms; empty availability is `200 []`                   | Result is easier to test.                                                                                                             |
-| Booking details   | Party size, lead guest name, and email                                        | We need this info to autoallocate rooms by size and also notify the person booking.                                                   |
-| Booking reference | Opaque `HBK-` reference, unique in the database                               | Public identifiers remain separate from database IDs and are safe to share with a guest.                                              |
-| Maximum stay      | 30 nights                                                                     | Standard.                                                                                                                             |
-| Test data         | Idempotent seed and destructive reset, enabled by configuration               | The required evaluator workflow is repeatable. Prod deployments can disable destructive endpoints.                                    |
-
+| Decision | Choice | Rationale |
+| --- | --- | --- |
+| Inventory | One seeded hotel, “The Grand Hotel” (ID 1): 2 single (capacity 1), 2 double (2), 2 deluxe (4) | The brief requires six rooms of three types but not their mix. An even split exercises every capacity rule. |
+| Stay dates | ISO-8601 calendar dates; check-in inclusive, checkout exclusive | A new guest can arrive on the day the previous guest leaves. |
+| Room assignment | The service assigns the smallest room that fits the party, then the lowest room number | Guests ask for a stay, not a specific room. Filling the smallest adequate room first keeps large rooms free for large parties. |
+| Availability | A list of individual qualifying rooms; no availability is `200 []` | Showing concrete rooms makes the assignment rule visible and checkable. An empty result is a valid answer, not an error. |
+| Booking details | Party size, lead guest name, and email | Party size drives room assignment; the name and email identify who to confirm the booking with. |
+| Booking reference | Opaque `HBK-` reference, unique in the database | Guests can share a reference safely because it reveals nothing about database IDs or booking volume. |
+| Maximum stay | 30 nights | Caps the number of night rows one booking creates and rejects obviously mistaken date ranges. |
+| Test data | Idempotent seed and destructive reset, enabled by configuration | Evaluators can repeat the workflow from a known state. Deployments can switch the destructive endpoints off. |
 
 ## Business invariants
 
-1. A hotel has rooms of only the single, double, and deluxe types in the supplied seed data.
-2. The seeded hotel has exactly six rooms.
-3. A room is never assigned to two bookings for the same night.
-4. One booking assigns exactly one room for its entire stay; guests never change rooms.
-5. A booking reference is unique.
-6. Party size never exceeds the selected room capacity.
+1. A room is never assigned to two bookings for the same night.
+2. One booking assigns exactly one room for its entire stay; guests never change rooms.
+3. Party size never exceeds the assigned room's capacity.
+4. A booking reference is unique.
+5. Every room is a single, double, or deluxe room with a positive capacity.
+
+The database enforces invariants 1, 4, and 5 with constraints; the booking service enforces 2 and 3.
 
 ## Implemented scope checklist
 
@@ -49,4 +48,4 @@ Provide a small, inspectable REST API for a hotel-booking coding exercise. It le
 
 ## Explicit non-goals
 
-Authentication, booking cancellation or modification, pricing, payments, hotel/room administration, pagination, and a rendered Swagger UI are intentionally excluded. The challenge says authentication is unnecessary; the remaining exclusions preserve a complete, focused booking flow rather than incomplete product fragments.
+Authentication, booking cancellation or modification, pricing, payments, hotel/room administration, pagination, and a rendered Swagger UI are intentionally excluded. The brief says authentication is unnecessary. The other exclusions keep the scope to one complete booking flow rather than several half-built features.

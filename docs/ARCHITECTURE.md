@@ -2,20 +2,20 @@
 
 ## Overview
 
-The API is a single Go process. Gin is responsible only for HTTP routing and response encoding; application services own hotel lookup, availability, test-data lifecycle, and booking decisions; GORM owns persistence. This keeps HTTP concerns out of the booking rules and makes the services testable with a real temporary SQLite database.
+The API is a single Go process with three layers. Gin handlers parse requests and encode responses. Application services own hotel search, availability, test data, and booking decisions. GORM maps those services onto SQLite. Keeping HTTP out of the services means the booking rules are tested directly against a real, temporary SQLite database.
 
 ## Chosen approach
 
 | Area | Choice | Reasoning |
 | --- | --- | --- |
 | HTTP | Gin | Gin gives the exercise concise, familiar REST routing while retaining explicit Go handlers. |
-| Persistence | GORM with SQLite | GORM centralises model mapping, transactions, and schema creation while the application keeps an explicit persistence boundary. |
+| Persistence | GORM with SQLite | GORM handles model mapping, transactions, and schema creation. Row models live in `internal/persistence`, so domain types carry no GORM tags; services still build their queries with GORM directly. |
 | Migration | GORM `AutoMigrate` | The small, controlled schema is created reproducibly at startup; more complex production schema evolution would use reviewed versioned migrations. |
 | SQLite dialect | `github.com/glebarez/sqlite` | This GORM dialect uses a pure-Go SQLite implementation, retaining the `CGO_ENABLED=0` Docker build. |
-| Booking collision protection | `booking_nights` with `UNIQUE(room_id, stay_date)` | SQLite cannot express a native date-range exclusion constraint. Materialising each occupied night turns overlap protection into a database-enforced invariant and works safely in a transaction. |
-| Allocation | Query suitable unoccupied rooms by capacity then room number | Allocation is deterministic and preserves scarce high-capacity rooms. |
-| Confirmation | Small notifier interface with managed goroutine | It starts only after commit, can be faked in tests, and avoids abandoned goroutines during shutdown. |
-| Operations | JSON `slog`, `/healthz`, SIGINT/SIGTERM shutdown | This is modest production hygiene without unnecessary platform infrastructure. |
+| Booking collision protection | `booking_nights` with `UNIQUE(room_id, stay_date)` | SQLite has no date-range exclusion constraint. Storing one row per occupied night lets a plain unique index reject any overlap. |
+| Allocation | Pick the free room with the smallest adequate capacity, then the lowest room number | Allocation is deterministic and keeps scarce high-capacity rooms for larger parties. |
+| Confirmation | Small notifier interface with a managed goroutine | It starts only after commit, can be faked in tests, and is waited for or cancelled at shutdown. |
+| Operations | JSON `slog` for application logs, `/healthz`, SIGINT/SIGTERM shutdown | Modest production hygiene without extra platform infrastructure. Gin and GORM still write their own plain-text logs. |
 
 ## Components
 
@@ -32,19 +32,24 @@ Gin handlers ──► application services ──► GORM ──► SQLite file
 - `internal/config`: parses environment variables without a framework.
 - `internal/database`: opens/configures SQLite and runs GORM `AutoMigrate`.
 - `internal/persistence`: holds GORM row models and converts them at the domain boundary.
-- `internal/httpapi`: owns only transport validation, HTTP status mapping, and DTOs.
+- `internal/httpapi`: owns transport validation, HTTP status mapping, and response DTOs (hotel search returns the domain type directly).
 - `internal/hotels`: finds named hotels and calculates suitable availability.
-- `internal/bookings`: validates requests, selects/locks a room through the database transaction, creates booking-night rows, and looks up references.
+- `internal/bookings`: validates requests, selects a free room and writes the booking and its night rows in one transaction, and looks up references.
 - `internal/notifications`: abstracts asynchronous confirmation delivery.
-- `internal/evaluatordata`: creates and removes deterministic evaluator data.
+- `internal/evaluatordata`: seeds the evaluator inventory with fixed IDs and resets all data.
 
 ## Data and concurrency model
 
-`hotels` owns `rooms`; `bookings` references one room and captures the public reference, dates, party size, and lead guest. `booking_nights` contains one row per night from check-in through the day before checkout. Creating the booking and every night row is one transaction. A unique conflict on `(room_id, stay_date)` is translated to HTTP `409`, so two simultaneous requests cannot both reserve the final room.
+`hotels` owns `rooms`. Each booking references one room and stores the public reference, dates, party size, and lead guest. `booking_nights` holds one row per night, from check-in up to the night before checkout. The booking and all its night rows are written in one transaction.
 
-A booking reference is generated from cryptographically random uppercase base32 characters and protected by a unique database constraint. The service starts a confirmation notification only after its transaction commits. The notifier waits two seconds, then writes a structured log message; graceful shutdown waits up to five seconds for accepted notifications and cancels any still pending.
+Two layers stop a room being double-booked:
 
-SQLite is deliberately selected for low setup cost. This deployment is a single application process using one configured SQLite connection; it is appropriate for the challenge rather than a horizontally scaled, multi-writer production deployment. A future multi-instance design would migrate to PostgreSQL while retaining the service interfaces and use equivalent transactional constraints.
+1. **Serialized writes.** The pool holds one SQLite connection, so booking transactions run one at a time. A second request for the last room sees it as occupied and gets `409`.
+2. **The unique index.** `UNIQUE(room_id, stay_date)` rejects any overlap that reaches the database. The service maps that violation to the same `409`. With one connection this is a backstop; it becomes the primary protection once writes run concurrently.
+
+Booking references use 12 cryptographically random base32 characters and are protected by a unique constraint. The confirmation notification starts only after the transaction commits. It waits two seconds and then writes a structured log line. On shutdown, the HTTP server drain and pending notifications share one five-second budget; notifications still pending after that are cancelled.
+
+SQLite keeps setup cost near zero, and a single process with one connection is enough for this exercise. It is not a horizontally scaled, multi-writer design. Moving to PostgreSQL would keep the per-night unique constraint but would need query and error-handling changes in the services. Examples are the room-number `CAST` ordering, which relies on SQLite tolerating non-numeric text, the SQLite-specific duplicate-key detection, and retrying a reference collision inside a transaction, which Postgres would abort.
 
 ## Configuration and safety
 
@@ -54,11 +59,11 @@ SQLite is deliberately selected for low setup cost. This deployment is a single 
 | `DATABASE_PATH` | `./data/hotel-bookings.db` | SQLite data file |
 | `ENABLE_TEST_ENDPOINTS` | `true` | Enables unauthenticated seed/reset routes; set `false` outside local evaluation |
 
-The API has no authentication because the brief explicitly requires none. This makes test endpoints dangerous in a public deployment; they are therefore configurable and documented as local-evaluation tools only.
+The API has no authentication because the brief does not require it. That makes the seed/reset endpoints dangerous on a public deployment, so they can be switched off and are documented as local-evaluation tools only.
 
 ## Verification and delivery
 
-The Makefile provides reproducible local gates: `make fmt-check`, `make vet`, `make test`, and `make check`. Docker uses a multi-stage build and a non-root runtime user; Compose persists the SQLite database in a named volume. No CI workflow is included by design: the local Makefile is the requested review gate for a small coding exercise.
+The Makefile provides reproducible local gates: `make fmt-check`, `make vet`, `make test`, and `make check`. Docker uses a multi-stage build and a non-root runtime user; Compose persists the SQLite database in a named volume. No CI workflow is included: for a small coding exercise, the Makefile targets are the review gate.
 
 ## Author completion
 

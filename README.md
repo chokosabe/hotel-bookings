@@ -6,7 +6,7 @@ A Go/Gin REST API for the hotel-booking coding exercise. It is intentionally sma
 
 ## Quick start
 
-Prerequisites: Go 1.25+ and Docker/Compose (optional).
+Prerequisites: Go 1.25.5+ and, optionally, Docker with Compose.
 
 ```bash
 make run
@@ -33,7 +33,7 @@ make check     # fmt-check + vet + test
 
 ## Configuration
 
-Copy `.env.example` if you want a record of local values; the API reads environment variables directly.
+The API reads environment variables only; it does not load `.env` files. `.env.example` lists every variable with its default, so you can export them or prefix a command, e.g. `PORT=9090 make run`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -43,13 +43,13 @@ Copy `.env.example` if you want a record of local values; the API reads environm
 
 The service has no authentication because the challenge does not require it. Never expose enabled seed/reset endpoints on an untrusted public deployment.
 
-## Current endpoints
+## Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/healthz` | Process health check |
-| `POST` | `/api/v1/test/reset` | Remove all seeded test data |
-| `POST` | `/api/v1/test/seed` | Idempotently create The Grand Hotel and six rooms |
+| `POST` | `/api/v1/test/reset` | Delete all hotels, rooms, and bookings |
+| `POST` | `/api/v1/test/seed` | Idempotently create The Grand Hotel (ID 1) and six rooms (IDs 1–6) |
 | `GET` | `/api/v1/hotels?name=grand` | Find hotels by case-insensitive name substring |
 | `GET` | `/api/v1/hotels/{hotelID}/availability?...` | Find rooms free for every requested night and suitable for the party |
 | `POST` | `/api/v1/bookings` | Atomically assign and reserve one room for a complete stay |
@@ -61,7 +61,7 @@ The test endpoints return `404` when `ENABLE_TEST_ENDPOINTS=false`.
 
 1. Start the API with `make run`.
 2. Run reset and seed from [`requests.http`](requests.http).
-3. Search `GET /api/v1/hotels?name=grand`; use the returned hotel ID.
+3. Search `GET /api/v1/hotels?name=grand`; the seeded hotel always has ID `1`, even after repeated reset/seed cycles.
 4. Check availability with `check_in`, `check_out`, and `guests` query parameters.
 5. Create a booking and retain its `reference` from the `201` response.
 6. Retrieve the same booking from `GET /api/v1/bookings/{reference}`.
@@ -70,11 +70,12 @@ A successful creation reserves each night in one transaction, then logs the simu
 
 ## Documentation
 
-- [Product requirements and assumptions](docs/PRD.md)
+- [Product requirements and decisions](docs/PRD.md)
 - [Architecture and trade-offs](docs/ARCHITECTURE.md)
 - [OpenAPI contract](docs/openapi.yaml)
 - [Executable HTTP requests](requests.http)
-- [Implementation plan](docs/superpowers/plans/2026-10-01-hotel-booking-api.md)
+
+The working plans used during development are kept in [`docs/superpowers/plans/`](docs/superpowers/plans/) as history. They predate later changes (notably the move from `database/sql` to GORM), so the documents above are authoritative.
 
 ## AI assistance disclosure
 
