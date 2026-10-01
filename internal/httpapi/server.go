@@ -29,6 +29,7 @@ func NewHandler(deps Dependencies) http.Handler {
 	api := router.Group("/api/v1")
 	if deps.Hotels != nil {
 		api.GET("/hotels", searchHotels(deps.Hotels))
+		api.GET("/hotels/:hotelID/availability", availableRooms(deps.Hotels))
 	}
 	if deps.EnableTestEndpoints && deps.TestData != nil {
 		test := api.Group("/test")

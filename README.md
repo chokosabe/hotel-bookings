@@ -2,7 +2,7 @@
 
 A Go/Gin REST API for the hotel-booking coding exercise. It is intentionally small, but is designed around the non-negotiable booking rules: a party receives one suitable room for its entire stay and a room cannot be double-booked for a night.
 
-> **Status:** the foundation, deterministic test-data, and hotel-search slices are complete. Availability, booking, and booking retrieval will be added as separately committed slices.
+> **Status:** hotel search and suitable-room availability are complete. Booking creation and booking retrieval will be added as separately committed slices.
 
 ## Quick start
 
@@ -51,6 +51,7 @@ The service has no authentication because the challenge does not require it. Nev
 | `POST` | `/api/v1/test/reset` | Remove all seeded test data |
 | `POST` | `/api/v1/test/seed` | Idempotently create The Grand Hotel and six rooms |
 | `GET` | `/api/v1/hotels?name=grand` | Find hotels by case-insensitive name substring |
+| `GET` | `/api/v1/hotels/{hotelID}/availability?...` | Find rooms free for every requested night and suitable for the party |
 
 The test endpoints return `404` when `ENABLE_TEST_ENDPOINTS=false`.
 

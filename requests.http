@@ -17,3 +17,11 @@ Accept: application/json
 ### A successful search with no matches is an empty list
 GET {{baseUrl}}/api/v1/hotels?name=unknown
 Accept: application/json
+
+### Find rooms suitable for three guests; only deluxe rooms qualify
+GET {{baseUrl}}/api/v1/hotels/1/availability?check_in=2026-12-10&check_out=2026-12-12&guests=3
+Accept: application/json
+
+### Invalid stays are rejected
+GET {{baseUrl}}/api/v1/hotels/1/availability?check_in=2026-12-12&check_out=2026-12-12&guests=1
+Accept: application/json
