@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chokosabe/hotel-bookings/internal/bookings"
 	"github.com/chokosabe/hotel-bookings/internal/database"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
 	"github.com/chokosabe/hotel-bookings/internal/hotels"
@@ -63,6 +64,7 @@ func newFeatureHandler(t *testing.T, enableTestEndpoints bool) http.Handler {
 	t.Cleanup(func() { db.Close() })
 
 	return httpapi.NewHandler(httpapi.Dependencies{
+		Bookings:            bookings.NewService(db, nil),
 		Hotels:              hotels.NewService(db),
 		TestData:            evaluatordata.NewService(db),
 		EnableTestEndpoints: enableTestEndpoints,

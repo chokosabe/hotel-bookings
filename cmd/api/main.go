@@ -10,11 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chokosabe/hotel-bookings/internal/bookings"
 	"github.com/chokosabe/hotel-bookings/internal/config"
 	"github.com/chokosabe/hotel-bookings/internal/database"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
 	"github.com/chokosabe/hotel-bookings/internal/hotels"
 	"github.com/chokosabe/hotel-bookings/internal/httpapi"
+	"github.com/chokosabe/hotel-bookings/internal/notifications"
 )
 
 func main() {
@@ -35,9 +37,13 @@ func main() {
 	}
 	defer db.Close()
 
+	notifier := notifications.NewAsyncNotifier(logger, 2*time.Second)
+	defer notifier.Close()
+
 	server := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewHandler(httpapi.Dependencies{
+			Bookings:            bookings.NewService(db, notifier),
 			Hotels:              hotels.NewService(db),
 			TestData:            evaluatordata.NewService(db),
 			EnableTestEndpoints: cfg.EnableTestEndpoints,
@@ -61,6 +67,10 @@ func main() {
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error("graceful shutdown failed", "error", err)
+		}
+		if err := notifier.Wait(shutdownCtx); err != nil {
+			logger.Warn("confirmation notifications did not finish before shutdown", "error", err)
+			notifier.Close()
 		}
 	}
 }

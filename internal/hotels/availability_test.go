@@ -66,7 +66,7 @@ func TestAvailableRoomsFiltersByCapacityAndReportsMissingHotel(t *testing.T) {
 	}
 
 	_, err = service.AvailableRooms(context.Background(), hotels.AvailabilityInput{HotelID: 999, Stay: stay, GuestCount: 1})
-	if err != hotels.ErrHotelNotFound {
+	if err != domain.ErrHotelNotFound {
 		t.Errorf("missing hotel error = %v, want ErrHotelNotFound", err)
 	}
 }

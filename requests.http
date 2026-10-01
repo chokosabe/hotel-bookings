@@ -25,3 +25,29 @@ Accept: application/json
 ### Invalid stays are rejected
 GET {{baseUrl}}/api/v1/hotels/1/availability?check_in=2026-12-12&check_out=2026-12-12&guests=1
 Accept: application/json
+
+### Create a two-night booking; the API assigns the lowest adequate room
+POST {{baseUrl}}/api/v1/bookings
+Content-Type: application/json
+
+{
+  "hotel_id": 1,
+  "check_in": "2026-12-10",
+  "check_out": "2026-12-12",
+  "guest_count": 1,
+  "lead_guest_name": "Ada Lovelace",
+  "lead_guest_email": "ada@example.com"
+}
+
+### No suitable room for five guests returns 409
+POST {{baseUrl}}/api/v1/bookings
+Content-Type: application/json
+
+{
+  "hotel_id": 1,
+  "check_in": "2026-12-10",
+  "check_out": "2026-12-12",
+  "guest_count": 5,
+  "lead_guest_name": "Ada Lovelace",
+  "lead_guest_email": "ada@example.com"
+}

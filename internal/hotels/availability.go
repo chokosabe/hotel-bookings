@@ -9,8 +9,6 @@ import (
 )
 
 var (
-	// ErrHotelNotFound means the supplied hotel identifier does not exist.
-	ErrHotelNotFound = errors.New("hotel not found")
 	// ErrInvalidGuestCount means a party size cannot be used for room selection.
 	ErrInvalidGuestCount = errors.New("guest count must be at least one")
 )
@@ -38,7 +36,7 @@ func (s *Service) AvailableRooms(ctx context.Context, input AvailabilityInput) (
 		return nil, fmt.Errorf("find hotel: %w", err)
 	}
 	if !exists {
-		return nil, ErrHotelNotFound
+		return nil, domain.ErrHotelNotFound
 	}
 
 	rows, err := s.db.QueryContext(ctx, `

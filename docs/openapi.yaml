@@ -97,6 +97,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/bookings:
+    post:
+      summary: Create a booking and assign one suitable room
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: The booking committed and its confirmation simulation was scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          description: The hotel does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: No room can accommodate the party for every requested night.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/test/reset:
     post:
       summary: Remove all evaluator test data
@@ -130,6 +161,63 @@ components:
         name:
           type: string
           example: The Grand Hotel
+    CreateBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [hotel_id, check_in, check_out, guest_count, lead_guest_name, lead_guest_email]
+      properties:
+        hotel_id:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1
+        check_in:
+          type: string
+          format: date
+          example: '2026-12-10'
+        check_out:
+          type: string
+          format: date
+          example: '2026-12-12'
+        guest_count:
+          type: integer
+          minimum: 1
+          example: 2
+        lead_guest_name:
+          type: string
+          example: Ada Lovelace
+        lead_guest_email:
+          type: string
+          format: email
+          example: ada@example.com
+    Booking:
+      type: object
+      required: [reference, hotel_id, room, check_in, check_out, guest_count, lead_guest_name, lead_guest_email, created_at]
+      properties:
+        reference:
+          type: string
+          pattern: '^HBK-[A-Z2-7]{12}$'
+        hotel_id:
+          type: integer
+          format: int64
+        room:
+          $ref: '#/components/schemas/AvailableRoom'
+        check_in:
+          type: string
+          format: date
+        check_out:
+          type: string
+          format: date
+        guest_count:
+          type: integer
+        lead_guest_name:
+          type: string
+        lead_guest_email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
     AvailableRoom:
       type: object
       required: [id, number, type, capacity]

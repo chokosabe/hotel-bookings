@@ -40,6 +40,8 @@ Gin handlers ──► application services ──► database/sql ──► SQL
 
 `hotels` owns `rooms`; `bookings` references one room and captures the public reference, dates, party size, and lead guest. `booking_nights` contains one row per night from check-in through the day before checkout. Creating the booking and every night row is one transaction. A unique conflict on `(room_id, stay_date)` is translated to HTTP `409`, so two simultaneous requests cannot both reserve the final room.
 
+A booking reference is generated from cryptographically random uppercase base32 characters and protected by a unique database constraint. The service starts a confirmation notification only after its transaction commits. The notifier waits two seconds, then writes a structured log message; graceful shutdown waits up to five seconds for accepted notifications and cancels any still pending.
+
 SQLite is deliberately selected for low setup cost. This deployment is a single application process using one configured SQLite connection; it is appropriate for the challenge rather than a horizontally scaled, multi-writer production deployment. A future multi-instance design would migrate to PostgreSQL while retaining the service interfaces and use equivalent transactional constraints.
 
 ## Configuration and safety

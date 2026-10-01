@@ -36,7 +36,7 @@ func availableRooms(service *hotels.Service) gin.HandlerFunc {
 		}
 		rooms, err := service.AvailableRooms(c.Request.Context(), input)
 		switch {
-		case errors.Is(err, hotels.ErrHotelNotFound):
+		case errors.Is(err, domain.ErrHotelNotFound):
 			writeError(c, http.StatusNotFound, "hotel_not_found", "hotel not found")
 			return
 		case err != nil:

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/chokosabe/hotel-bookings/internal/bookings"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
 	"github.com/chokosabe/hotel-bookings/internal/hotels"
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 
 // Dependencies are the application services used by HTTP handlers.
 type Dependencies struct {
+	Bookings            *bookings.Service
 	Hotels              *hotels.Service
 	TestData            *evaluatordata.Service
 	EnableTestEndpoints bool
@@ -30,6 +32,9 @@ func NewHandler(deps Dependencies) http.Handler {
 	if deps.Hotels != nil {
 		api.GET("/hotels", searchHotels(deps.Hotels))
 		api.GET("/hotels/:hotelID/availability", availableRooms(deps.Hotels))
+	}
+	if deps.Bookings != nil {
+		api.POST("/bookings", createBooking(deps.Bookings))
 	}
 	if deps.EnableTestEndpoints && deps.TestData != nil {
 		test := api.Group("/test")
