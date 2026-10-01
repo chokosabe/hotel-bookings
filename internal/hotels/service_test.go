@@ -15,7 +15,11 @@ func TestSearchMatchesCaseInsensitiveSubstring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("access database pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	if err := evaluatordata.NewService(db).Seed(context.Background()); err != nil {
 		t.Fatalf("seed database: %v", err)

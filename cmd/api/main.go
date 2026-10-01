@@ -35,7 +35,12 @@ func main() {
 		logger.Error("open database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Error("access database pool", "error", err)
+		os.Exit(1)
+	}
+	defer sqlDB.Close()
 
 	notifier := notifications.NewAsyncNotifier(logger, 2*time.Second)
 	defer notifier.Close()

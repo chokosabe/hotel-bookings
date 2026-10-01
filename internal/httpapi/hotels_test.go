@@ -61,7 +61,11 @@ func newFeatureHandler(t *testing.T, enableTestEndpoints bool) http.Handler {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("access database pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	return httpapi.NewHandler(httpapi.Dependencies{
 		Bookings:            bookings.NewService(db, nil),

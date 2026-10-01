@@ -2,7 +2,6 @@ package bookings_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -13,6 +12,8 @@ import (
 	"github.com/chokosabe/hotel-bookings/internal/database"
 	"github.com/chokosabe/hotel-bookings/internal/domain"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"gorm.io/gorm"
 )
 
 func TestCreateAssignsLowestAdequateRoomReservesEveryNightAndNotifies(t *testing.T) {
@@ -30,8 +31,8 @@ func TestCreateAssignsLowestAdequateRoomReservesEveryNightAndNotifies(t *testing
 	if len(booking.Reference) != len("HBK-")+12 || booking.Reference[:4] != "HBK-" {
 		t.Errorf("reference = %q, want HBK- plus 12 characters", booking.Reference)
 	}
-	var nights int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM booking_nights WHERE booking_id = ?`, booking.ID).Scan(&nights); err != nil {
+	var nights int64
+	if err := db.Model(&persistence.BookingNight{}).Where("booking_id = ?", booking.ID).Count(&nights).Error; err != nil {
 		t.Fatalf("count booking nights: %v", err)
 	}
 	if nights != 2 {
@@ -81,7 +82,7 @@ func TestCreateRejectsInvalidInputWithoutNotifying(t *testing.T) {
 
 func TestCompetingBookingsForFinalRoomYieldOneSuccess(t *testing.T) {
 	db := bookingDatabase(t)
-	if _, err := db.Exec(`DELETE FROM rooms WHERE number != '101'`); err != nil {
+	if err := db.Where("number <> ?", "101").Delete(&persistence.Room{}).Error; err != nil {
 		t.Fatalf("reduce inventory: %v", err)
 	}
 	service := bookings.NewService(db, nil)
@@ -116,13 +117,17 @@ func TestCompetingBookingsForFinalRoomYieldOneSuccess(t *testing.T) {
 	}
 }
 
-func bookingDatabase(t *testing.T) *sql.DB {
+func bookingDatabase(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := database.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("access database pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := evaluatordata.NewService(db).Seed(context.Background()); err != nil {
 		t.Fatalf("seed database: %v", err)
 	}

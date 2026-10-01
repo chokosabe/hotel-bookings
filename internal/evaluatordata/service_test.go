@@ -7,6 +7,7 @@ import (
 
 	"github.com/chokosabe/hotel-bookings/internal/database"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
 )
 
 func TestSeedIsIdempotentAndResetRemovesData(t *testing.T) {
@@ -14,7 +15,11 @@ func TestSeedIsIdempotentAndResetRemovesData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("access database pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	service := evaluatordata.NewService(db)
 	if err := service.Seed(context.Background()); err != nil {
@@ -24,11 +29,11 @@ func TestSeedIsIdempotentAndResetRemovesData(t *testing.T) {
 		t.Fatalf("second Seed() error = %v", err)
 	}
 
-	var hotels, rooms int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM hotels`).Scan(&hotels); err != nil {
+	var hotels, rooms int64
+	if err := db.Model(&persistence.Hotel{}).Count(&hotels).Error; err != nil {
 		t.Fatalf("count hotels: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM rooms`).Scan(&rooms); err != nil {
+	if err := db.Model(&persistence.Room{}).Count(&rooms).Error; err != nil {
 		t.Fatalf("count rooms: %v", err)
 	}
 	if hotels != 1 || rooms != 6 {
@@ -38,7 +43,7 @@ func TestSeedIsIdempotentAndResetRemovesData(t *testing.T) {
 	if err := service.Reset(context.Background()); err != nil {
 		t.Fatalf("Reset() error = %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM hotels`).Scan(&hotels); err != nil {
+	if err := db.Model(&persistence.Hotel{}).Count(&hotels).Error; err != nil {
 		t.Fatalf("count reset hotels: %v", err)
 	}
 	if hotels != 0 {

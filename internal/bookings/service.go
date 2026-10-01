@@ -4,7 +4,6 @@ package bookings
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -13,6 +12,8 @@ import (
 
 	"github.com/chokosabe/hotel-bookings/internal/domain"
 	"github.com/chokosabe/hotel-bookings/internal/notifications"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"gorm.io/gorm"
 )
 
 var (
@@ -37,13 +38,13 @@ type CreateInput struct {
 
 // Service owns booking creation. It invokes notifier only after a committed booking.
 type Service struct {
-	db       *sql.DB
+	db       *gorm.DB
 	notifier notifications.Notifier
 	now      func() time.Time
 }
 
 // NewService constructs a booking service backed by db.
-func NewService(db *sql.DB, notifier notifications.Notifier) *Service {
+func NewService(db *gorm.DB, notifier notifications.Notifier) *Service {
 	return &Service{db: db, notifier: notifier, now: time.Now}
 }
 
@@ -54,38 +55,35 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.Booking
 		return domain.Booking{}, err
 	}
 
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return domain.Booking{}, fmt.Errorf("begin booking transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
+	var booking domain.Booking
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var hotel persistence.Hotel
+		if err := tx.First(&hotel, input.HotelID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrHotelNotFound
+			}
+			return fmt.Errorf("find hotel: %w", err)
+		}
 
-	var hotelExists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hotels WHERE id = ?)`, input.HotelID).Scan(&hotelExists); err != nil {
-		return domain.Booking{}, fmt.Errorf("find hotel: %w", err)
-	}
-	if !hotelExists {
-		return domain.Booking{}, domain.ErrHotelNotFound
-	}
+		room, err := selectAvailableRoom(tx, input)
+		if err != nil {
+			return err
+		}
 
-	room, err := selectAvailableRoom(ctx, tx, input)
+		booking, err = insertBooking(tx, input, room, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := reserveNights(tx, booking.ID, room.ID, input.Stay); err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		return domain.Booking{}, err
-	}
-
-	createdAt := s.now().UTC()
-	booking, err := insertBooking(ctx, tx, input, room, createdAt)
-	if err != nil {
-		return domain.Booking{}, err
-	}
-	if err := reserveNights(ctx, tx, booking.ID, room.ID, input.Stay); err != nil {
-		return domain.Booking{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		if isUniqueConstraint(err) {
 			return domain.Booking{}, ErrNoSuitableRoom
 		}
-		return domain.Booking{}, fmt.Errorf("commit booking transaction: %w", err)
+		return domain.Booking{}, err
 	}
 
 	if s.notifier != nil {
@@ -118,61 +116,59 @@ func validate(input CreateInput) (CreateInput, error) {
 	return input, nil
 }
 
-func selectAvailableRoom(ctx context.Context, tx *sql.Tx, input CreateInput) (domain.Room, error) {
-	var room domain.Room
-	err := tx.QueryRowContext(ctx, `
-		SELECT r.id, r.hotel_id, r.number, r.type, r.capacity
-		FROM rooms r
-		WHERE r.hotel_id = ?
-		  AND r.capacity >= ?
-		  AND NOT EXISTS (
-		      SELECT 1 FROM booking_nights bn
-		      WHERE bn.room_id = r.id
-		        AND bn.stay_date >= ?
-		        AND bn.stay_date < ?
-		  )
-		ORDER BY r.capacity ASC, CAST(r.number AS INTEGER) ASC, r.number ASC
-		LIMIT 1
-	`, input.HotelID, input.GuestCount, input.Stay.CheckIn.Format(dateLayout), input.Stay.CheckOut.Format(dateLayout)).Scan(
-		&room.ID, &room.HotelID, &room.Number, &room.Type, &room.Capacity,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+func selectAvailableRoom(tx *gorm.DB, input CreateInput) (domain.Room, error) {
+	occupied := tx.Model(&persistence.BookingNight{}).
+		Select("1").
+		Where("booking_nights.room_id = rooms.id").
+		Where("stay_date >= ? AND stay_date < ?", input.Stay.CheckIn.Format(dateLayout), input.Stay.CheckOut.Format(dateLayout))
+	var room persistence.Room
+	result := tx.Where("hotel_id = ? AND capacity >= ?", input.HotelID, input.GuestCount).
+		Where("NOT EXISTS (?)", occupied).
+		Order("capacity ASC").
+		Order("CAST(number AS INTEGER) ASC").
+		Order("number ASC").
+		Limit(1).
+		Find(&room)
+	if result.Error != nil {
+		return domain.Room{}, fmt.Errorf("select available room: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return domain.Room{}, ErrNoSuitableRoom
 	}
-	if err != nil {
-		return domain.Room{}, fmt.Errorf("select available room: %w", err)
-	}
-	return room, nil
+	return persistence.RoomToDomain(room), nil
 }
 
-func insertBooking(ctx context.Context, tx *sql.Tx, input CreateInput, room domain.Room, createdAt time.Time) (domain.Booking, error) {
+func insertBooking(tx *gorm.DB, input CreateInput, room domain.Room, createdAt time.Time) (domain.Booking, error) {
 	for range 3 {
 		reference, err := newReference()
 		if err != nil {
 			return domain.Booking{}, fmt.Errorf("generate booking reference: %w", err)
 		}
-		result, err := tx.ExecContext(ctx, `
-			INSERT INTO bookings (reference, room_id, check_in, check_out, guest_count, lead_guest_name, lead_guest_email, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, reference, room.ID, input.Stay.CheckIn.Format(dateLayout), input.Stay.CheckOut.Format(dateLayout), input.GuestCount, input.LeadGuestName, input.LeadGuestEmail, createdAt.Format(time.RFC3339Nano))
-		if err != nil {
+		record := persistence.Booking{
+			Reference:      reference,
+			RoomID:         room.ID,
+			CheckIn:        input.Stay.CheckIn.Format(dateLayout),
+			CheckOut:       input.Stay.CheckOut.Format(dateLayout),
+			GuestCount:     input.GuestCount,
+			LeadGuestName:  input.LeadGuestName,
+			LeadGuestEmail: input.LeadGuestEmail,
+			CreatedAt:      createdAt.Format(time.RFC3339Nano),
+		}
+		if err := tx.Create(&record).Error; err != nil {
 			if isReferenceConflict(err) {
 				continue
 			}
 			return domain.Booking{}, fmt.Errorf("insert booking: %w", err)
 		}
-		id, err := result.LastInsertId()
-		if err != nil {
-			return domain.Booking{}, fmt.Errorf("read booking ID: %w", err)
-		}
-		return domain.Booking{ID: id, Reference: reference, HotelID: input.HotelID, Room: room, Stay: input.Stay, GuestCount: input.GuestCount, LeadGuestName: input.LeadGuestName, LeadGuestEmail: input.LeadGuestEmail, CreatedAt: createdAt}, nil
+		return domain.Booking{ID: record.ID, Reference: reference, HotelID: input.HotelID, Room: room, Stay: input.Stay, GuestCount: input.GuestCount, LeadGuestName: input.LeadGuestName, LeadGuestEmail: input.LeadGuestEmail, CreatedAt: createdAt}, nil
 	}
 	return domain.Booking{}, errors.New("generate unique booking reference after three collisions")
 }
 
-func reserveNights(ctx context.Context, tx *sql.Tx, bookingID, roomID int64, stay domain.Stay) error {
+func reserveNights(tx *gorm.DB, bookingID, roomID int64, stay domain.Stay) error {
 	for night := stay.CheckIn; night.Before(stay.CheckOut); night = night.AddDate(0, 0, 1) {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO booking_nights (booking_id, room_id, stay_date) VALUES (?, ?, ?)`, bookingID, roomID, night.Format(dateLayout)); err != nil {
+		record := persistence.BookingNight{BookingID: bookingID, RoomID: roomID, StayDate: night.Format(dateLayout)}
+		if err := tx.Create(&record).Error; err != nil {
 			if isUniqueConstraint(err) {
 				return ErrNoSuitableRoom
 			}
@@ -184,40 +180,16 @@ func reserveNights(ctx context.Context, tx *sql.Tx, bookingID, roomID int64, sta
 
 // FindByReference returns a confirmed booking and its assigned room.
 func (s *Service) FindByReference(ctx context.Context, reference string) (domain.Booking, error) {
-	var booking domain.Booking
-	var checkIn, checkOut, createdAt string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT b.id, b.reference, b.room_id, r.hotel_id, r.number, r.type, r.capacity,
-		       b.check_in, b.check_out, b.guest_count, b.lead_guest_name, b.lead_guest_email, b.created_at
-		FROM bookings b
-		JOIN rooms r ON r.id = b.room_id
-		WHERE b.reference = ?
-	`, strings.TrimSpace(reference)).Scan(
-		&booking.ID, &booking.Reference, &booking.Room.ID, &booking.HotelID, &booking.Room.Number, &booking.Room.Type, &booking.Room.Capacity,
-		&checkIn, &checkOut, &booking.GuestCount, &booking.LeadGuestName, &booking.LeadGuestEmail, &createdAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Booking{}, ErrBookingNotFound
-	}
-	if err != nil {
+	var record persistence.Booking
+	if err := s.db.WithContext(ctx).Preload("Room").Where("reference = ?", strings.TrimSpace(reference)).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Booking{}, ErrBookingNotFound
+		}
 		return domain.Booking{}, fmt.Errorf("find booking: %w", err)
 	}
-	booking.Room.HotelID = booking.HotelID
-	checkInDate, err := time.Parse(dateLayout, checkIn)
+	booking, err := persistence.BookingToDomain(record)
 	if err != nil {
-		return domain.Booking{}, fmt.Errorf("parse stored check-in: %w", err)
-	}
-	checkOutDate, err := time.Parse(dateLayout, checkOut)
-	if err != nil {
-		return domain.Booking{}, fmt.Errorf("parse stored check-out: %w", err)
-	}
-	booking.Stay, err = domain.NewStay(checkInDate, checkOutDate)
-	if err != nil {
-		return domain.Booking{}, fmt.Errorf("validate stored stay: %w", err)
-	}
-	booking.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
-	if err != nil {
-		return domain.Booking{}, fmt.Errorf("parse stored creation time: %w", err)
+		return domain.Booking{}, err
 	}
 	return booking, nil
 }
@@ -235,9 +207,9 @@ func newReference() (string, error) {
 }
 
 func isReferenceConflict(err error) bool {
-	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed: bookings.reference")
+	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed: bookings.reference")
 }
 
 func isUniqueConstraint(err error) bool {
-	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
 }

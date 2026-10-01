@@ -3,46 +3,37 @@ package hotels
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/chokosabe/hotel-bookings/internal/domain"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"gorm.io/gorm"
 )
 
 // Service provides hotel-related application operations.
 type Service struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewService constructs a hotel service backed by db.
-func NewService(db *sql.DB) *Service {
+func NewService(db *gorm.DB) *Service {
 	return &Service{db: db}
 }
 
 // Search finds hotels whose name contains name, case-insensitively.
 func (s *Service) Search(ctx context.Context, name string) ([]domain.Hotel, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name
-		FROM hotels
-		WHERE lower(name) LIKE '%' || lower(?) || '%'
-		ORDER BY name, id
-	`, strings.TrimSpace(name))
-	if err != nil {
+	var rows []persistence.Hotel
+	if err := s.db.WithContext(ctx).
+		Where("lower(name) LIKE ?", "%"+strings.ToLower(strings.TrimSpace(name))+"%").
+		Order("name, id").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("search hotels: %w", err)
 	}
-	defer rows.Close()
 
-	hotels := make([]domain.Hotel, 0)
-	for rows.Next() {
-		var hotel domain.Hotel
-		if err := rows.Scan(&hotel.ID, &hotel.Name); err != nil {
-			return nil, fmt.Errorf("scan hotel: %w", err)
-		}
-		hotels = append(hotels, hotel)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate hotels: %w", err)
+	hotels := make([]domain.Hotel, len(rows))
+	for i, hotel := range rows {
+		hotels[i] = persistence.HotelToDomain(hotel)
 	}
 	return hotels, nil
 }

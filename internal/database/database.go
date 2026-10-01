@@ -1,48 +1,55 @@
-// Package database owns SQLite connectivity and schema migration.
+// Package database owns GORM SQLite connectivity and schema migration.
 package database
 
 import (
 	"context"
-	"database/sql"
-	"embed"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
-
-// Open opens a SQLite database, enables foreign keys, and applies embedded migrations.
-func Open(ctx context.Context, path string) (*sql.DB, error) {
+// Open opens a SQLite database, configures its connection pool, and creates any
+// missing tables, indexes, and constraints from the GORM persistence models.
+func Open(ctx context.Context, path string) (*gorm.DB, error) {
 	if err := ensureParentDirectory(path); err != nil {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", path)
+	db, err := gorm.Open(sqlite.Open(sqliteDSN(path)), &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-
-	// A single connection preserves connection-scoped SQLite PRAGMAs and avoids
-	// surprising lock behaviour for this intentionally single-file deployment.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("configure database: %w", err)
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("access database pool: %w", err)
 	}
-	if err := migrate(ctx, db); err != nil {
-		db.Close()
-		return nil, err
+	// SQLite applies PRAGMAs per physical connection. One connection keeps the
+	// settings stable and matches this deliberately single-file deployment.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+
+	if err := db.WithContext(ctx).AutoMigrate(
+		&persistence.Hotel{},
+		&persistence.Room{},
+		&persistence.Booking{},
+		&persistence.BookingNight{},
+	); err != nil {
+		return nil, fmt.Errorf("auto-migrate database: %w", err)
 	}
 	return db, nil
+}
+
+func sqliteDSN(path string) string {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + "_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 }
 
 func ensureParentDirectory(path string) error {
@@ -50,54 +57,4 @@ func ensureParentDirectory(path string) error {
 		return nil
 	}
 	return os.MkdirAll(filepath.Dir(path), 0o750)
-}
-
-func migrate(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY);`); err != nil {
-		return fmt.Errorf("create migration ledger: %w", err)
-	}
-
-	entries, err := fs.ReadDir(migrationFiles, "migrations")
-	if err != nil {
-		return fmt.Errorf("read migrations: %w", err)
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		var applied bool
-		if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = ?)`, entry.Name()).Scan(&applied); err != nil {
-			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
-		}
-		if applied {
-			continue
-		}
-
-		contents, err := migrationFiles.ReadFile("migrations/" + entry.Name())
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
-		}
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("begin migration %s: %w", entry.Name(), err)
-		}
-		if _, err := tx.ExecContext(ctx, string(contents)); err != nil {
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				return fmt.Errorf("apply migration %s: %w (rollback failed: %v)", entry.Name(), err, rollbackErr)
-			}
-			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name) VALUES (?)`, entry.Name()); err != nil {
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				return fmt.Errorf("record migration %s: %w (rollback failed: %v)", entry.Name(), err, rollbackErr)
-			}
-			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
 }

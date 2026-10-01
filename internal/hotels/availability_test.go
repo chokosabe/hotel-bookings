@@ -2,7 +2,6 @@ package hotels_test
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,24 +10,23 @@ import (
 	"github.com/chokosabe/hotel-bookings/internal/domain"
 	"github.com/chokosabe/hotel-bookings/internal/evaluatordata"
 	"github.com/chokosabe/hotel-bookings/internal/hotels"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"gorm.io/gorm"
 )
 
 func TestAvailableRoomsExcludesOccupiedNightsAndAllowsCheckoutReuse(t *testing.T) {
 	db := seededDatabase(t)
-	var roomID int64
-	if err := db.QueryRow(`SELECT id FROM rooms WHERE number = '101'`).Scan(&roomID); err != nil {
+	var room persistence.Room
+	if err := db.Where("number = ?", "101").First(&room).Error; err != nil {
 		t.Fatalf("find room: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO bookings (reference, room_id, check_in, check_out, guest_count, lead_guest_name, lead_guest_email, created_at) VALUES ('HBK-EXISTING', ?, '2026-12-10', '2026-12-12', 1, 'Guest', 'guest@example.com', '2026-01-01T00:00:00Z')`, roomID); err != nil {
-		t.Fatalf("insert booking: %v", err)
-	}
-	var bookingID int64
-	if err := db.QueryRow(`SELECT id FROM bookings WHERE reference = 'HBK-EXISTING'`).Scan(&bookingID); err != nil {
-		t.Fatalf("find booking: %v", err)
+	booking := persistence.Booking{Reference: "HBK-EXISTING", RoomID: room.ID, CheckIn: "2026-12-10", CheckOut: "2026-12-12", GuestCount: 1, LeadGuestName: "Guest", LeadGuestEmail: "guest@example.com", CreatedAt: "2026-01-01T00:00:00Z"}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("create booking: %v", err)
 	}
 	for _, date := range []string{"2026-12-10", "2026-12-11"} {
-		if _, err := db.Exec(`INSERT INTO booking_nights (booking_id, room_id, stay_date) VALUES (?, ?, ?)`, bookingID, roomID, date); err != nil {
-			t.Fatalf("insert booking night %s: %v", date, err)
+		if err := db.Create(&persistence.BookingNight{BookingID: booking.ID, RoomID: room.ID, StayDate: date}).Error; err != nil {
+			t.Fatalf("create booking night %s: %v", date, err)
 		}
 	}
 
@@ -71,13 +69,17 @@ func TestAvailableRoomsFiltersByCapacityAndReportsMissingHotel(t *testing.T) {
 	}
 }
 
-func seededDatabase(t *testing.T) *sql.DB {
+func seededDatabase(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := database.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("access database pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := evaluatordata.NewService(db).Seed(context.Background()); err != nil {
 		t.Fatalf("seed database: %v", err)
 	}

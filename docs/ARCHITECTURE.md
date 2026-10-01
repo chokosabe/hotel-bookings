@@ -2,15 +2,16 @@
 
 ## Overview
 
-The API is a single Go process. Gin is responsible only for HTTP routing and response encoding; application services own hotel lookup, availability, test-data lifecycle, and booking decisions; `database/sql` owns persistence. This keeps HTTP concerns out of the booking rules and makes the services testable with a real temporary SQLite database.
+The API is a single Go process. Gin is responsible only for HTTP routing and response encoding; application services own hotel lookup, availability, test-data lifecycle, and booking decisions; GORM owns persistence. This keeps HTTP concerns out of the booking rules and makes the services testable with a real temporary SQLite database.
 
 ## Chosen approach
 
 | Area | Choice | Reasoning |
 | --- | --- | --- |
 | HTTP | Gin | Gin gives the exercise concise, familiar REST routing while retaining explicit Go handlers. |
-| Persistence | `database/sql` with SQLite | A single file gives reviewers a zero-dependency local setup and avoids ORM-generated behaviour. |
-| Migration | Embedded versioned SQL | Schema creation is reproducible at startup and visible in the repository. |
+| Persistence | GORM with SQLite | GORM centralises model mapping, transactions, and schema creation while the application keeps an explicit persistence boundary. |
+| Migration | GORM `AutoMigrate` | The small, controlled schema is created reproducibly at startup; more complex production schema evolution would use reviewed versioned migrations. |
+| SQLite dialect | `github.com/glebarez/sqlite` | This GORM dialect uses a pure-Go SQLite implementation, retaining the `CGO_ENABLED=0` Docker build. |
 | Booking collision protection | `booking_nights` with `UNIQUE(room_id, stay_date)` | SQLite cannot express a native date-range exclusion constraint. Materialising each occupied night turns overlap protection into a database-enforced invariant and works safely in a transaction. |
 | Allocation | Query suitable unoccupied rooms by capacity then room number | Allocation is deterministic and preserves scarce high-capacity rooms. |
 | Confirmation | Small notifier interface with managed goroutine | It starts only after commit, can be faked in tests, and avoids abandoned goroutines during shutdown. |
@@ -22,14 +23,15 @@ The API is a single Go process. Gin is responsible only for HTTP routing and res
 client
   │ HTTP/JSON
   ▼
-Gin handlers ──► application services ──► database/sql ──► SQLite file
+Gin handlers ──► application services ──► GORM ──► SQLite file
                          │
                          └──────────────► notifier ──► structured log (after 2s)
 ```
 
 - `cmd/api`: wires configuration, database, server, lifecycle, and logging.
 - `internal/config`: parses environment variables without a framework.
-- `internal/database`: opens SQLite, enables foreign keys, and runs embedded migrations.
+- `internal/database`: opens/configures SQLite and runs GORM `AutoMigrate`.
+- `internal/persistence`: holds GORM row models and converts them at the domain boundary.
 - `internal/httpapi`: owns only transport validation, HTTP status mapping, and DTOs.
 - `internal/hotels`: finds named hotels and calculates suitable availability.
 - `internal/bookings`: validates requests, selects/locks a room through the database transaction, creates booking-night rows, and looks up references.

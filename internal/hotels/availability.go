@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/chokosabe/hotel-bookings/internal/domain"
+	"github.com/chokosabe/hotel-bookings/internal/persistence"
+	"gorm.io/gorm"
 )
 
 var (
@@ -31,43 +33,32 @@ func (s *Service) AvailableRooms(ctx context.Context, input AvailabilityInput) (
 		return nil, ErrInvalidGuestCount
 	}
 
-	var exists bool
-	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hotels WHERE id = ?)`, input.HotelID).Scan(&exists); err != nil {
+	var hotel persistence.Hotel
+	if err := s.db.WithContext(ctx).First(&hotel, input.HotelID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrHotelNotFound
+		}
 		return nil, fmt.Errorf("find hotel: %w", err)
 	}
-	if !exists {
-		return nil, domain.ErrHotelNotFound
-	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.hotel_id, r.number, r.type, r.capacity
-		FROM rooms r
-		WHERE r.hotel_id = ?
-		  AND r.capacity >= ?
-		  AND NOT EXISTS (
-		      SELECT 1
-		      FROM booking_nights bn
-		      WHERE bn.room_id = r.id
-		        AND bn.stay_date >= ?
-		        AND bn.stay_date < ?
-		  )
-		ORDER BY r.capacity ASC, CAST(r.number AS INTEGER) ASC, r.number ASC
-	`, input.HotelID, input.GuestCount, input.Stay.CheckIn.Format(timeLayout), input.Stay.CheckOut.Format(timeLayout))
-	if err != nil {
+	occupied := s.db.WithContext(ctx).Model(&persistence.BookingNight{}).
+		Select("1").
+		Where("booking_nights.room_id = rooms.id").
+		Where("stay_date >= ? AND stay_date < ?", input.Stay.CheckIn.Format(timeLayout), input.Stay.CheckOut.Format(timeLayout))
+	var rows []persistence.Room
+	if err := s.db.WithContext(ctx).
+		Where("hotel_id = ? AND capacity >= ?", input.HotelID, input.GuestCount).
+		Where("NOT EXISTS (?)", occupied).
+		Order("capacity ASC").
+		Order("CAST(number AS INTEGER) ASC").
+		Order("number ASC").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("find available rooms: %w", err)
 	}
-	defer rows.Close()
 
-	rooms := make([]domain.Room, 0)
-	for rows.Next() {
-		var room domain.Room
-		if err := rows.Scan(&room.ID, &room.HotelID, &room.Number, &room.Type, &room.Capacity); err != nil {
-			return nil, fmt.Errorf("scan available room: %w", err)
-		}
-		rooms = append(rooms, room)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate available rooms: %w", err)
+	rooms := make([]domain.Room, len(rows))
+	for i, room := range rows {
+		rooms[i] = persistence.RoomToDomain(room)
 	}
 	return rooms, nil
 }
