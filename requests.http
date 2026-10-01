@@ -1,0 +1,57 @@
+@baseUrl = http://localhost:8080
+
+### Health check
+GET {{baseUrl}}/healthz
+Accept: application/json
+
+### Reset the deterministic evaluator data
+POST {{baseUrl}}/api/v1/test/reset
+
+### Seed The Grand Hotel and its six rooms (safe to repeat)
+POST {{baseUrl}}/api/v1/test/seed
+
+### Find the seeded hotel by case-insensitive name substring
+GET {{baseUrl}}/api/v1/hotels?name=grand
+Accept: application/json
+
+### A successful search with no matches is an empty list
+GET {{baseUrl}}/api/v1/hotels?name=unknown
+Accept: application/json
+
+### Find rooms suitable for three guests; only deluxe rooms qualify
+GET {{baseUrl}}/api/v1/hotels/1/availability?check_in=2026-12-10&check_out=2026-12-12&guests=3
+Accept: application/json
+
+### Invalid stays are rejected
+GET {{baseUrl}}/api/v1/hotels/1/availability?check_in=2026-12-12&check_out=2026-12-12&guests=1
+Accept: application/json
+
+### Create a two-night booking; the API assigns the lowest adequate room
+POST {{baseUrl}}/api/v1/bookings
+Content-Type: application/json
+
+{
+  "hotel_id": 1,
+  "check_in": "2026-12-10",
+  "check_out": "2026-12-12",
+  "guest_count": 1,
+  "lead_guest_name": "Ada Lovelace",
+  "lead_guest_email": "ada@example.com"
+}
+
+### No suitable room for five guests returns 409
+POST {{baseUrl}}/api/v1/bookings
+Content-Type: application/json
+
+{
+  "hotel_id": 1,
+  "check_in": "2026-12-10",
+  "check_out": "2026-12-12",
+  "guest_count": 5,
+  "lead_guest_name": "Ada Lovelace",
+  "lead_guest_email": "ada@example.com"
+}
+
+### Find booking details (replace with the reference returned by create booking)
+GET {{baseUrl}}/api/v1/bookings/HBK-REPLACEWITHREFERENCE
+Accept: application/json

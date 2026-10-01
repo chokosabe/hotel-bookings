@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+data
+bin
+coverage.*
+*.out
+*.coverprofile
+README.md
+docs
+requests.http
