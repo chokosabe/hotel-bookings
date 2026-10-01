@@ -1,0 +1,40 @@
+openapi: 3.1.0
+info:
+  title: Hotel Bookings API
+  version: 0.1.0
+  description: |
+    REST API for the hotel-booking coding exercise. This contract expands with
+    each functional slice; the health endpoint is available in the foundation.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Check service health
+      operationId: healthz
+      responses:
+        '200':
+          description: The process can accept HTTP requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
