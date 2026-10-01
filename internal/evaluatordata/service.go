@@ -31,7 +31,7 @@ func (s *Service) Seed(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin seed transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO hotels (name) VALUES ('The Grand Hotel')`); err != nil {
 		return fmt.Errorf("insert hotel: %w", err)

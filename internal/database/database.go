@@ -84,11 +84,15 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("begin migration %s: %w", entry.Name(), err)
 		}
 		if _, err := tx.ExecContext(ctx, string(contents)); err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return fmt.Errorf("apply migration %s: %w (rollback failed: %v)", entry.Name(), err, rollbackErr)
+			}
 			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name) VALUES (?)`, entry.Name()); err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return fmt.Errorf("record migration %s: %w (rollback failed: %v)", entry.Name(), err, rollbackErr)
+			}
 			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
 		}
 		if err := tx.Commit(); err != nil {

@@ -58,7 +58,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.Booking
 	if err != nil {
 		return domain.Booking{}, fmt.Errorf("begin booking transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var hotelExists bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hotels WHERE id = ?)`, input.HotelID).Scan(&hotelExists); err != nil {
